@@ -1,17 +1,12 @@
+# Python 3.11 Slim (Sabse chhota aur fast)
 FROM python:3.11-slim
-
-# 🔥 CHANGE IS HERE: Added 'git' to the list
-RUN apt-get update && \
-    apt-get install -y ffmpeg fontconfig fonts-dejavu git && \
-    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt .
-
-# Ab git installed hai, to ye command chal jayegi
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:10000", "--timeout", "300"]
+# Timeout 120s kaafi hai kyunki conversion nahi karna
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:10000", "--timeout", "120"]
