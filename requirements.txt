@@ -1,5 +1,6 @@
 flask
-yt-dlp
 requests
 Pillow
 gunicorn
+yt-dlp>=2024.08.06
+ffmpeg-python
