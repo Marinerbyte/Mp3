@@ -12,19 +12,14 @@ import io
 
 app = Flask(__name__)
 
-# --- CONFIGURATION ---
 DOWNLOAD_DIR = "/tmp/downloads"
-
-# Startup Cleanup
-if os.path.exists(DOWNLOAD_DIR):
-    shutil.rmtree(DOWNLOAD_DIR)
+if os.path.exists(DOWNLOAD_DIR): shutil.rmtree(DOWNLOAD_DIR)
 os.makedirs(DOWNLOAD_DIR)
 
 @app.route('/')
-def home():
-    return "✅ Audio Worker is Live & Updated!", 200
+def home(): return "✅ Audio Worker (iOS Mode) Running!", 200
 
-# --- WATCHDOG ---
+# Watchdog
 def cleaner_watchdog():
     while True:
         try:
@@ -33,14 +28,12 @@ def cleaner_watchdog():
             if os.path.exists(DOWNLOAD_DIR):
                 for f in os.listdir(DOWNLOAD_DIR):
                     fp = os.path.join(DOWNLOAD_DIR, f)
-                    if os.path.getmtime(fp) < now - 600:
-                        os.remove(fp)
+                    if os.path.getmtime(fp) < now - 600: os.remove(fp)
         except: pass
-
 t = threading.Thread(target=cleaner_watchdog, daemon=True)
 t.start()
 
-# --- HELPER: UPLOAD ---
+# Upload Helper
 def upload_to_catbox(file_path=None, image_obj=None, is_image=False):
     try:
         url = "https://catbox.moe/user/api.php"
@@ -56,73 +49,70 @@ def upload_to_catbox(file_path=None, image_obj=None, is_image=False):
         
         r = requests.post(url, files=files, headers={'Connection': 'close'}, timeout=120)
         if file_path and 'f' in locals(): f.close()
-        
-        if r.status_code == 200: return r.text.strip()
-    except Exception as e: print(f"Upload Err: {e}")
-    return None
+        return r.text.strip() if r.status_code == 200 else None
+    except: return None
 
-# --- HELPER: CARD ---
+# Card Helper
 def create_card(title, duration, thumb_url):
     try:
         img = Image.new('RGB', (600, 300), (17, 24, 39))
         draw = ImageDraw.Draw(img)
+        draw.rectangle([0,0,600,300], fill=(17, 24, 39))
         if thumb_url:
             try:
                 r = requests.get(thumb_url, timeout=5)
                 with Image.open(io.BytesIO(r.content)) as av:
                     img.paste(av.resize((200, 200)), (30, 50))
             except: pass
-        
         try: font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
         except: font = ImageFont.load_default()
-        
         draw.text((260, 80), title[:20]+"...", font=font, fill="white")
         draw.text((260, 130), f"Time: {duration}", font=font, fill="cyan")
         return img
     except: return None
 
-# --- CONVERT ENDPOINT ---
 @app.route('/convert', methods=['POST'])
 def convert():
-    data = request.json
-    query = data.get('query')
-    if not query: return jsonify({"error": "No query"}), 400
-    
-    temp_id = uuid.uuid4().hex
-    mp3_file = None
-    
     try:
-        # 🔥 ROBUST OPTIONS (Anti-Block)
+        data = request.json
+        query = data.get('query')
+        if not query: return jsonify({"error": "No query"}), 400
+        
+        temp_id = uuid.uuid4().hex
+        mp3_file = None
+        
+        # 🔥 FINAL ANTI-BLOCK SETTINGS (iOS Client)
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': f'{DOWNLOAD_DIR}/{temp_id}_%(id)s.%(ext)s',
             'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],
             'quiet': True,
             'no_warnings': True,
-            'noplaylist': True,
             'geo_bypass': True,
             'nocheckcertificate': True,
-            # User Agent spoofing to look like a browser
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            # 👇 CHANGE IS HERE: iOS Client use kar rahe hain
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['ios'], 
+                    'player_skip': ['webpage', 'configs', 'js'], 
+                }
+            },
+            # 👇 IPv4 Force (Render par zaroori hai)
+            'source_address': '0.0.0.0'
         }
         
         info = None
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # ytsearch1: ka matlab pehla result hi uthao (Fast)
             if not query.startswith("http"): query = f"ytsearch1:{query}"
-            
             info = ydl.extract_info(query, download=True)
             if 'entries' in info: info = info['entries'][0]
             
-            # Find File
             files = glob.glob(f"{DOWNLOAD_DIR}/{temp_id}*.mp3")
             if files: mp3_file = files[0]
 
-        if not mp3_file: return jsonify({"error": "Download Failed (Check Logs)"}), 500
+        if not mp3_file: return jsonify({"error": "Download Failed"}), 500
 
         audio_url = upload_to_catbox(file_path=mp3_file)
-        if not audio_url: return jsonify({"error": "Catbox Upload Failed"}), 500
-        
         card_img = create_card(info.get('title'), info.get('duration_string'), info.get('thumbnail'))
         card_url = upload_to_catbox(image_obj=card_img, is_image=True)
 
@@ -134,8 +124,6 @@ def convert():
         })
 
     except Exception as e:
-        # Asli error print karo Render Logs me dekhne ke liye
-        print(f"CRITICAL ERROR: {e}")
         return jsonify({"error": str(e)}), 500
     
     finally:
