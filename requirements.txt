@@ -3,4 +3,4 @@ requests
 Pillow
 gunicorn
 ffmpeg-python
-yt-dlp>=2024.08.06
+git+https://github.com/yt-dlp/yt-dlp.git@master
