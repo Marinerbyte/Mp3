@@ -12,48 +12,46 @@ import io
 
 app = Flask(__name__)
 
-# /tmp linux containers ke liye best hota hai (RAM disk jaisa fast)
+# --- CONFIGURATION ---
 DOWNLOAD_DIR = "/tmp/downloads"
 
-# --- 🧹 LAYER 1: STARTUP CLEANUP ---
-# Server on hote hi purana folder uda ke naya banao
+# 1. Startup Cleanup (Start hote hi purana kachra saaf)
 if os.path.exists(DOWNLOAD_DIR):
     shutil.rmtree(DOWNLOAD_DIR)
 os.makedirs(DOWNLOAD_DIR)
 
-# --- 🧹 LAYER 2: WATCHDOG (BACKGROUND CLEANER) ---
+# --- 👇 YE RAHA NAYA HOME PAGE CODE 👇 ---
+@app.route('/')
+def home():
+    return "✅ Audio Worker Server is Running! (Ready to process music)", 200
+# ------------------------------------------
+
+# --- 🧹 CLEANER WATCHDOG (Background mein safai karega) ---
 def cleaner_watchdog():
-    """Ye har 5 minute mein check karega aur 10 min purani files uda dega"""
     print("🧹 Cleaner Watchdog Started...")
     while True:
         try:
             time.sleep(300) # 5 Minute Sona
-            
             now = time.time()
-            cutoff = now - 600 # 10 Minute purana time
+            cutoff = now - 600 # 10 Minute se purani files
             
             if os.path.exists(DOWNLOAD_DIR):
                 for filename in os.listdir(DOWNLOAD_DIR):
                     file_path = os.path.join(DOWNLOAD_DIR, filename)
-                    # Check creation time
                     if os.path.getmtime(file_path) < cutoff:
                         try:
                             os.remove(file_path)
-                            print(f"🗑️ Watchdog Deleted Old File: {filename}")
-                        except Exception as e:
-                            print(f"Error deleting {filename}: {e}")
-        except Exception as e:
-            print(f"Watchdog Error: {e}")
+                            print(f"🗑️ Watchdog Deleted: {filename}")
+                        except: pass
+        except: pass
 
-# Thread start karo (Daemon taaki main app ke sath band ho jaye)
 t = threading.Thread(target=cleaner_watchdog, daemon=True)
 t.start()
 
-# --- HELPER: CATBOX UPLOAD ---
+# --- HELPER: UPLOAD TO CATBOX ---
 def upload_to_catbox(file_path=None, image_obj=None, is_image=False):
     try:
         url = "https://catbox.moe/user/api.php"
-        buf = None
         files = {}
         
         if is_image and image_obj:
@@ -67,6 +65,7 @@ def upload_to_catbox(file_path=None, image_obj=None, is_image=False):
             filename = f"audio_{uuid.uuid4().hex}.mp3"
             files = {'reqtype': (None, 'fileupload'), 'fileToUpload': (filename, f)}
         
+        # Connection close zaroori hai
         r = requests.post(url, files=files, headers={'Connection': 'close'}, timeout=120)
         
         if file_path and 'f' in locals(): f.close()
@@ -77,7 +76,7 @@ def upload_to_catbox(file_path=None, image_obj=None, is_image=False):
         print(f"Upload Error: {e}")
     return None
 
-# --- HELPER: DRAW CARD ---
+# --- HELPER: DRAW MUSIC CARD ---
 def create_card(title, duration, thumb_url):
     try:
         w, h = 600, 300
@@ -96,27 +95,26 @@ def create_card(title, duration, thumb_url):
         try: font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
         except: font = ImageFont.load_default()
         
-        title_text = title[:20] + "..." if len(title) > 20 else title
-        draw.text((260, 80), title_text, font=font, fill="white")
+        clean_title = title[:20] + "..." if len(title) > 20 else title
+        draw.text((260, 80), clean_title, font=font, fill="white")
         draw.text((260, 130), f"Time: {duration}", font=font, fill="cyan")
         
         return img
     except: return None
 
-# --- API ENDPOINT ---
+# --- MAIN API ENDPOINT ---
 @app.route('/convert', methods=['POST'])
 def convert():
     data = request.json
     query = data.get('query')
     
-    if not query: return jsonify({"error": "No query"}), 400
+    if not query: return jsonify({"error": "No query provided"}), 400
     
-    # Unique Temp ID taaki files mix na ho
     temp_id = uuid.uuid4().hex
     mp3_file = None
     
     try:
-        # 1. Download
+        # 1. Download from YouTube
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': f'{DOWNLOAD_DIR}/{temp_id}_%(id)s.%(ext)s',
@@ -130,8 +128,7 @@ def convert():
             info = ydl.extract_info(query, download=True)
             if 'entries' in info: info = info['entries'][0]
             
-            # Find the file we just downloaded
-            # (Glob use kar rahe hain kyunki exact naam kabhi kabhi change ho jata hai)
+            # Find generated file
             files = glob.glob(f"{DOWNLOAD_DIR}/{temp_id}*.mp3")
             if files: mp3_file = files[0]
 
@@ -156,14 +153,10 @@ def convert():
         return jsonify({"error": str(e)}), 500
     
     finally:
-        # --- 🧹 LAYER 3: INSTANT CLEANUP ---
-        # Request khatam hote hi file uda do, chahe error aaye ya success
+        # 4. Instant Cleanup (Kaam khatam, file hazam)
         if mp3_file and os.path.exists(mp3_file):
-            try:
-                os.remove(mp3_file)
-                print(f"✅ Cleaned up: {mp3_file}")
-            except Exception as e:
-                print(f"Cleanup Error: {e}")
+            try: os.remove(mp3_file)
+            except: pass
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
