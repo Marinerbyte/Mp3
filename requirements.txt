@@ -1,6 +1,6 @@
-flask
+Flask
 requests
 Pillow
 gunicorn
-yt-dlp>=2024.08.06
 ffmpeg-python
+yt-dlp>=2024.08.06
