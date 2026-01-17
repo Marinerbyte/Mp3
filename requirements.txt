@@ -2,5 +2,3 @@ Flask
 requests
 Pillow
 gunicorn
-ffmpeg-python
-git+https://github.com/yt-dlp/yt-dlp.git@master
